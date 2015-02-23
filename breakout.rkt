@@ -138,11 +138,35 @@
   (and (< 0 x width)
        (< 0 y height)))
 
+(define (maybe-flip a-ball a-brick)
+  (displayln (list a-ball a-brick))
+  ; a collision between the ball and the body has been detected,
+  ; maybe flip the x and y velocities of the ball
+  (match-define (body bx by bw bh) a-brick)
+  (define (maybe-flip-vx a-ball)
+    (match-define (ball  x  y  w  h vx vy) a-ball)
+    ; hit vertical side?
+    (if (or (= (+ x w) bx) (= x (+ bx bw)))
+        (ball x y w h (- vx) vy)
+        a-ball))
+  (define (maybe-flip-vy a-ball)
+    (match-define (ball  x  y  w  h vx vy) a-ball)
+    ; hit horizontal side?
+    (if (or (= (+ y h) by) (= y (+ by bh)))
+        (ball x y w h vx (- vy))
+        a-ball))
+  
+  (maybe-flip-vy (maybe-flip-vx a-ball)))
+
 (define (handle-ball/brick-collisions w)
   (match-define (world bat bricks balls) w)
-  'todo)
-    
-  
+  (define-values (new-bricks new-balls)
+    (for/fold ([new-bricks '()] [new-balls '()]) ([ball balls])
+      (for/fold ([new-bricks '()] [new-balls '()]) ([brick bricks])
+        (if (colliding? brick ball)
+            (values new-bricks (cons (maybe-flip ball brick) new-balls))
+            (values (cons brick new-bricks) (cons ball new-balls))))))
+  (world bat new-bricks new-balls))
 
 ;;; DRAWING
 
@@ -213,7 +237,7 @@
 ;;; INSTRUCTIONS
 ;;;
 
-(displayln "ARKANOID")
+(displayln "Breakout")
 (displayln "Move:  left and right arrow")
 (displayln "Shoot: space")
 (displayln "Reset: r")
