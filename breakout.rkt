@@ -73,7 +73,7 @@
   (define x (- (/ width 2.) (/ bat-width 2.)))
   (define y (- height (* 2. bat-height)))
   (new-ball x y 0.3 -3))
-  
+
 
 
 ;;; Updaters
@@ -122,6 +122,23 @@
       w))
 
 ;;; Collision
+
+(define (line-intersection x0 y0  x1 y1  x2 y2  x3 y3)
+  (struct line-equation (a b c) #:transparent) ; ax+by=c
+  (define (two-points->line-equation x0 y0 x1 y1)
+    (define a (- y1 y0))
+    (define b (- x0 x1))
+    (define c (+ (* a x0) (* b y0)))
+    (line-equation a b c))
+  (define l0 (two-points->line-equation x0 y0 x1 y1))
+  (define l1 (two-points->line-equation x2 y2 x3 y3))
+  (match-define (line-equation a0 b0 c0) l0)
+  (match-define (line-equation a1 b1 c1) l1)
+  (define det (- (* a0 b1) (* a1 b0)))
+  (cond [(zero? det) #f] ; lines are parallel 
+        [else        (list (/ (- (* b1 c0) (* b0 c1)) det)
+                           (/ (- (* a0 c1) (* a1 c0)) det))]))
+
 
 (define (colliding? b1 b2)
   (match-define (body x1 y1 w1 h1) b1)
