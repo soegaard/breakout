@@ -18,6 +18,8 @@
 (struct ball  body (vx vy)               #:transparent)
 (struct bat   body (dead?)               #:transparent)
 
+; The velocities vx and vy of the ball are measured in pixels pr second.
+
 ;;; Configuration
 (define width       400)
 (define height      400)
@@ -26,6 +28,9 @@
 (define ball-size     3)
 (define brick-width  30)
 (define brick-height 10)
+(define frames-per-second 20)
+(define Δt (/ 1. frames-per-second))
+
 
 ;;; Smart Constructors
 
@@ -71,22 +76,21 @@
 
 (define (create-ball)
   (define x (- (/ width 2.) (/ bat-width 2.)))
-  (define y (- height (* 2. bat-height)))
-  (new-ball x y 0.3 -3))
-
-
+  (define y (- height (* 3. bat-height)))
+  (new-ball x y 10. -50.))  ; velocities in pixels per second
 
 ;;; Updaters
 
 ; update-brick : brick -> brick
+;   nothing happens here yet
 (define (update-brick b)
   (match-define (brick x y w h s) b)
   (brick x y w h s))
 
 ; update-ball : ball -> ball
-(define (update-ball b)
-  (match-define (ball x y w h vx vy) b)
-  (ball (+ x vx) (+ y vy) w h vx vy))
+#;(define (update-ball b)
+    (match-define (ball x y w h vx vy) b)
+    (ball (+ x vx) (+ y vy) w h vx vy))
 
 ; update-bat : world -> world
 (define (update-bat W)
@@ -103,10 +107,9 @@
 
 (define (update w)
   (restart-on-r
-   (handle-ball/brick-collisions
-    (update-bat
+   (update-bat
      (update-bricks
-      (update-balls w))))))
+      (update-balls w)))))
 
 
 (define (update-bricks w)
@@ -114,7 +117,10 @@
   (struct-copy world w [bricks (map update-brick bs)]))
 
 (define (update-balls w)
-  (struct-copy world w [balls (map update-ball (world-balls w))]))
+  (match-define (world bat bricks balls) w)
+  (for/fold ([w (world bat bricks '())])
+            ([b balls])
+    (move-ball w b)))
 
 (define (restart-on-r w)
   (if (key-down? #\r)
@@ -139,6 +145,32 @@
         [else        (list (/ (- (* b1 c0) (* b0 c1)) det)
                            (/ (- (* a0 c1) (* a1 c0)) det))]))
 
+(define (move-ball w b)
+  (match-define (ball x y bw bh vx vy) b)
+  ; the total distance to move during this time step
+  (define Δ (* Δt (sqrt (+ (sqr vx) (sqr vy)))))
+  ; the number of steps: a step needs to so small that
+  ; the ball moves at most one pixlel in both the horisontal 
+  ; and vertical direction (this way a fast ball can't move
+  ; through a brick)
+  ; compute the number n of steps 
+  (define n (inexact->exact (ceiling (/ Δ (max (abs vx) (abs vy))))))
+  (define Δx (/ (* Δt vx) n))
+  (define Δy (/ (* Δt vy) n))
+  ; (displayln (list 'move-ball 'steps steps 'Δx Δx 'Δy Δy))
+  (match-define (world bat bricks balls) w)
+  (for/fold ([w (world bat bricks (cons b balls))]) ([_ n])
+    (move-ball/one-step w Δx Δy)))
+
+(define (move-ball/one-step w Δx Δy)
+  ; move the first ball in w the distance given by Δx and Δy,
+  ; handle collisions: i.e. remove brick and change direction
+  (match-define (world bat bricks balls) w)
+  (match-define (ball x y bw bh vx vy) (first balls))
+  (define moved-ball (ball (+ x Δx) (+ y Δy) bw bh vx vy))
+  (handle-ball/bat-collision
+   (handle-ball/brick-collisions 
+    (world bat bricks (cons moved-ball (rest balls))))))
 
 (define (colliding? b1 b2)
   (match-define (body x1 y1 w1 h1) b1)
@@ -160,30 +192,37 @@
   ; a collision between the ball and the body has been detected,
   ; maybe flip the x and y velocities of the ball
   (match-define (body bx by bw bh) a-brick)
+  (define (~ x y) (<= (abs (- x y)) 0.1))
   (define (maybe-flip-vx a-ball)
     (match-define (ball  x  y  w  h vx vy) a-ball)
-    ; hit vertical side?
     (if (or (= (+ x w) bx) (= x (+ bx bw)))
         (ball x y w h (- vx) vy)
         a-ball))
   (define (maybe-flip-vy a-ball)
-    (match-define (ball  x  y  w  h vx vy) a-ball)
-    ; hit horizontal side?
+    (match-define (ball x y w h vx vy) a-ball)
     (if (or (= (+ y h) by) (= y (+ by bh)))
         (ball x y w h vx (- vy))
         a-ball))
-  
   (maybe-flip-vy (maybe-flip-vx a-ball)))
 
 (define (handle-ball/brick-collisions w)
+  ; given the ball b, remove any bricks colliding with b
+  ; if the ball collides with a brick, change its direction
   (match-define (world bat bricks balls) w)
-  (define-values (new-bricks new-balls)
-    (for/fold ([new-bricks '()] [new-balls '()]) ([ball balls])
-      (for/fold ([new-bricks '()] [new-balls '()]) ([brick bricks])
-        (if (colliding? brick ball)
-            (values new-bricks (cons (maybe-flip ball brick) new-balls))
-            (values (cons brick new-bricks) (cons ball new-balls))))))
-  (world bat new-bricks new-balls))
+  (define-values (new-bricks new-ball)
+    (for/fold ([new-bricks '()] [ball (first balls)])
+              ([brick bricks])
+      (if (colliding? brick ball)
+          (values             new-bricks (maybe-flip ball brick))
+          (values (cons brick new-bricks)            ball))))
+  (world bat new-bricks (cons new-ball (rest balls))))
+
+(define (handle-ball/bat-collision w)
+  ; handle collisions between the first ball and the bat
+  (match-define (world bat bricks (cons ball balls)) w)
+  (if (colliding? bat ball)
+      (world bat bricks (cons (maybe-flip ball bat) balls))
+      w))
 
 ;;; DRAWING
 
