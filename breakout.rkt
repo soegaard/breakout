@@ -29,7 +29,7 @@
 (define brick-width  30)
 (define brick-height 10)
 (define frames-per-second 20)
-(define Δt (/ 1. frames-per-second))
+(define Δt (/ 1 frames-per-second))
 
 
 ;;; Smart Constructors
@@ -77,7 +77,7 @@
 (define (create-ball)
   (define x (- (/ width 2.) (/ bat-width 2.)))
   (define y (- height (* 3. bat-height)))
-  (new-ball x y 10. -50.))  ; velocities in pixels per second
+  (new-ball x y 10 -60))  ; velocities in pixels per second
 
 ;;; Updaters
 
@@ -168,9 +168,10 @@
   (match-define (world bat bricks balls) w)
   (match-define (ball x y bw bh vx vy) (first balls))
   (define moved-ball (ball (+ x Δx) (+ y Δy) bw bh vx vy))
-  (handle-ball/bat-collision
-   (handle-ball/brick-collisions 
-    (world bat bricks (cons moved-ball (rest balls))))))
+  (handle-ball/wall-collision
+   (handle-ball/bat-collision
+    (handle-ball/brick-collisions 
+     (world bat bricks (cons moved-ball (rest balls)))))))
 
 (define (colliding? b1 b2)
   (match-define (body x1 y1 w1 h1) b1)
@@ -192,15 +193,15 @@
   ; a collision between the ball and the body has been detected,
   ; maybe flip the x and y velocities of the ball
   (match-define (body bx by bw bh) a-brick)
-  (define (~ x y) (<= (abs (- x y)) 0.1))
+  (define (~ x y) (<= (abs (- x y)) 1))
   (define (maybe-flip-vx a-ball)
-    (match-define (ball  x  y  w  h vx vy) a-ball)
-    (if (or (= (+ x w) bx) (= x (+ bx bw)))
+    (match-define (ball x y w h vx vy) a-ball)
+    (if (or (~ (+ x w) bx) (~ x (+ bx bw)))
         (ball x y w h (- vx) vy)
         a-ball))
   (define (maybe-flip-vy a-ball)
     (match-define (ball x y w h vx vy) a-ball)
-    (if (or (= (+ y h) by) (= y (+ by bh)))
+    (if (or (~ (+ y h) by) (~ y (+ by bh)))
         (ball x y w h vx (- vy))
         a-ball))
   (maybe-flip-vy (maybe-flip-vx a-ball)))
@@ -223,6 +224,19 @@
   (if (colliding? bat ball)
       (world bat bricks (cons (maybe-flip ball bat) balls))
       w))
+
+(define (handle-ball/wall-collision w)
+  ; handle collisions between the first ball and the bat
+  (match-define (world bat bricks (cons a-ball balls)) w)
+  (match-define (ball x y bw bh vx vy) a-ball)
+  (cond
+    ; upper wall
+    [(<= y 0) (world bat bricks (cons (ball x y bw bh vx (- vy)) balls))]
+    ; left wall
+    [(<= x 0) (world bat bricks (cons (ball x y bw bh (- vx) vy) balls))]
+    ; right wall
+    [(>= x width) (world bat bricks (cons (ball x y bw bh (- vx) vy) balls))]
+    [else w]))
 
 ;;; DRAWING
 
@@ -275,7 +289,7 @@
     (super-new)))
 
 ; Create frame with canvas and show it.
-(define frame  (new frame%  [label "Arkanoid"]))
+(define frame  (new frame%  [label "Breakout"]))
 (define canvas (new game-canvas% [parent frame] [min-width width] [min-height height]))
 (send frame show #t)
 
