@@ -1,8 +1,6 @@
 #lang racket
 (require racket/gui)
 
-;;; STILL A WORK IN PROGRESS
-
 ;;;
 ;;; BREAKOUT
 ;;;
@@ -10,27 +8,29 @@
 ; Jens Axel Søgaard, Feb 2014
 ;     https://github.com/soegaard/breakout
 
+;;; References
+;;;   http://en.wikipedia.org/wiki/Breakout_%28video_game%29
 
 ;;; Data Representation
-(struct world      (bat bricks balls)    #:transparent)
-(struct body       (x y w h)             #:transparent)
-(struct brick body (strength)            #:transparent)
-(struct ball  body (vx vy)               #:transparent)
-(struct bat   body (dead?)               #:transparent)
+(struct world       (paddle bricks balls)   #:transparent)
+(struct body        (x y w h)               #:transparent)
+(struct brick  body (strength)              #:transparent)
+(struct ball   body (vx vy)                 #:transparent)
+(struct paddle body (dead?)                 #:transparent)
 
 ; The velocities vx and vy of the ball are measured in pixels pr second.
 
 ;;; Configuration
-(define width       400)
-(define height      400)
-(define bat-width    30)
-(define bat-height    6)
-(define ball-size     3)
-(define brick-width  30)
-(define brick-height 10)
-(define frames-per-second 20)
-(define Δt (/ 1 frames-per-second))
+(define width            400)
+(define height           400)
+(define paddle-width      30)
+(define paddle-height      6)
+(define ball-size          3)
+(define brick-width       30)
+(define brick-height      10)
+(define frames-per-second 10)
 
+(define Δt (/ 1. frames-per-second))
 
 ;;; Smart Constructors
 
@@ -40,8 +40,8 @@
 (define (new-brick x y)
   (brick x y brick-width brick-height 1))
 
-(define (new-bat x y)
-  (bat x y bat-width bat-height #f))
+(define (new-paddle x y)
+  (paddle x y paddle-width paddle-height #f))
 
 ;;;
 ;;; MODEL
@@ -50,9 +50,9 @@
 ;;; Creation
 
 ; create-world : -> world
-;  the initial world contains a bat and a bunch of bricks
+;  the initial world contains a paddle and a bunch of bricks
 (define (create-world)
-  (world (create-bat) (create-bricks) (list (create-ball))))
+  (world (create-paddle) (create-bricks) (list (create-ball))))
 
 ; create-bricks : -> (list body)
 ;   create list of twenty-four bricks
@@ -68,16 +68,16 @@
     (define y (+ margin (* (+ h gap) (quotient  i cols)))) 
     (new-brick x y)))
 
-; create-bat : -> bat
-(define (create-bat)
-  (define x (- (/ width 2.) (/ bat-width 2.)))
-  (define y (- height (* 2. bat-height)))
-  (new-bat x y))
+; create-paddle : -> paddle
+(define (create-paddle)
+  (define x (- (/ width 2.) (/ paddle-width 2.)))
+  (define y (- height (* 2. paddle-height)))
+  (new-paddle x y))
 
 (define (create-ball)
-  (define x (- (/ width 2.) (/ bat-width 2.)))
-  (define y (- height (* 3. bat-height)))
-  (new-ball x y 10 -60))  ; velocities in pixels per second
+  (define x (- (/ width 2.) (/ paddle-width 2.)))
+  (define y (- height (* 3. paddle-height)))
+  (new-ball x y 4 -20))  ; velocities in pixels per second
 
 ;;; Updaters
 
@@ -92,22 +92,22 @@
     (match-define (ball x y w h vx vy) b)
     (ball (+ x vx) (+ y vy) w h vx vy))
 
-; update-bat : world -> world
-(define (update-bat W)
-  (match-define (world b bricks balls) W)
-  (match-define (bat x y w h dead?) b)
-  (define moved-bat
-    (cond [dead?              b]
-          [(key-down? 'left)  (bat (- x 2.) y w h dead?)]
-          [(key-down? 'right) (bat (+ x 2.) y w h dead?)]
-          [else               (bat x y w h dead?)]))
-  (world moved-bat bricks balls))
+; update-paddle : world -> world
+(define (update-paddle w)
+  (match-define (world p bricks balls) w)
+  (match-define (paddle x y pw ph dead?) p)
+  (define moved-paddle
+    (cond [dead?              p]
+          [(key-down? 'left)  (paddle (- x 2.) y pw ph dead?)]
+          [(key-down? 'right) (paddle (+ x 2.) y pw ph dead?)]
+          [else               (paddle    x     y pw ph dead?)]))
+  (world moved-paddle bricks balls))
 
 ;;; UPDATES
 
 (define (update w)
   (restart-on-r
-   (update-bat
+   (update-paddle
      (update-bricks
       (update-balls w)))))
 
@@ -117,8 +117,8 @@
   (struct-copy world w [bricks (map update-brick bs)]))
 
 (define (update-balls w)
-  (match-define (world bat bricks balls) w)
-  (for/fold ([w (world bat bricks '())])
+  (match-define (world paddle bricks balls) w)
+  (for/fold ([w (world paddle bricks '())])
             ([b balls])
     (move-ball w b)))
 
@@ -158,20 +158,20 @@
   (define Δx (/ (* Δt vx) n))
   (define Δy (/ (* Δt vy) n))
   ; (displayln (list 'move-ball 'steps steps 'Δx Δx 'Δy Δy))
-  (match-define (world bat bricks balls) w)
-  (for/fold ([w (world bat bricks (cons b balls))]) ([_ n])
+  (match-define (world paddle bricks balls) w)
+  (for/fold ([w (world paddle bricks (cons b balls))]) ([_ n])
     (move-ball/one-step w Δx Δy)))
 
 (define (move-ball/one-step w Δx Δy)
   ; move the first ball in w the distance given by Δx and Δy,
   ; handle collisions: i.e. remove brick and change direction
-  (match-define (world bat bricks balls) w)
+  (match-define (world paddle bricks balls) w)
   (match-define (ball x y bw bh vx vy) (first balls))
   (define moved-ball (ball (+ x Δx) (+ y Δy) bw bh vx vy))
   (handle-ball/wall-collision
-   (handle-ball/bat-collision
+   (handle-ball/paddle-collision
     (handle-ball/brick-collisions 
-     (world bat bricks (cons moved-ball (rest balls)))))))
+     (world paddle bricks (cons moved-ball (rest balls)))))))
 
 (define (colliding? b1 b2)
   (match-define (body x1 y1 w1 h1) b1)
@@ -209,33 +209,41 @@
 (define (handle-ball/brick-collisions w)
   ; given the ball b, remove any bricks colliding with b
   ; if the ball collides with a brick, change its direction
-  (match-define (world bat bricks balls) w)
+  (match-define (world paddle bricks balls) w)
   (define-values (new-bricks new-ball)
     (for/fold ([new-bricks '()] [ball (first balls)])
               ([brick bricks])
       (if (colliding? brick ball)
           (values             new-bricks (maybe-flip ball brick))
           (values (cons brick new-bricks)            ball))))
-  (world bat new-bricks (cons new-ball (rest balls))))
+  (world paddle new-bricks (cons new-ball (rest balls))))
 
-(define (handle-ball/bat-collision w)
-  ; handle collisions between the first ball and the bat
-  (match-define (world bat bricks (cons ball balls)) w)
-  (if (colliding? bat ball)
-      (world bat bricks (cons (maybe-flip ball bat) balls))
-      w))
+(define (handle-ball/paddle-collision w)
+  ; handle collisions between the first ball and the paddle
+  (match-define (world p bricks (cons b balls)) w)
+  (cond 
+    [(colliding? p b)
+     (match-define (ball    x  y bw bh vx vy) b)
+     (match-define (paddle px py pw ph d)     p)
+     (define ball-center-x   (/ (+  x  x bw) 2.))
+     (define paddle-center-x (/ (+ px px pw) 2.))
+     (define v (sqrt (+ (sqr vx) (sqr vy))))
+     (define vx* (*    (/ (- ball-center-x  paddle-center-x) (/ pw 2.))))
+     (define vy* (* -1 (sqrt (abs (- 1. (sqr vx*))))))
+     (world p bricks (cons (ball x y bw bh (* vx* v) (* vy* v)) balls))]
+    [else w]))
 
 (define (handle-ball/wall-collision w)
-  ; handle collisions between the first ball and the bat
-  (match-define (world bat bricks (cons a-ball balls)) w)
+  ; handle collisions between the first ball and the paddle
+  (match-define (world paddle bricks (cons a-ball balls)) w)
   (match-define (ball x y bw bh vx vy) a-ball)
   (cond
     ; upper wall
-    [(<= y 0) (world bat bricks (cons (ball x y bw bh vx (- vy)) balls))]
+    [(<= y 0) (world paddle bricks (cons (ball x y bw bh vx (- vy)) balls))]
     ; left wall
-    [(<= x 0) (world bat bricks (cons (ball x y bw bh (- vx) vy) balls))]
+    [(<= x 0) (world paddle bricks (cons (ball x y bw bh (- vx) vy) balls))]
     ; right wall
-    [(>= x width) (world bat bricks (cons (ball x y bw bh (- vx) vy) balls))]
+    [(>= x width) (world paddle bricks (cons (ball x y bw bh (- vx) vy) balls))]
     [else w]))
 
 ;;; DRAWING
@@ -245,13 +253,13 @@
 (define (draw-bodies bs dc)
   (for ([b bs])
     (match-define (body x y w h) b)
-    (define c (if (bat? b) (if (bat-dead? b) "red" "green") "black"))
+    (define c (if (paddle? b) (if (paddle-dead? b) "red" "green") "black"))
     (send dc set-brush (new brush% [color c] [style 'solid]))
     (send dc draw-rectangle x y w h)))
 
 (define (draw-world w dc)
-  (match-define (world bat bricks balls) w)
-  (draw-bodies (append (list bat) bricks balls) dc))
+  (match-define (world paddle bricks balls) w)
+  (draw-bodies (append (list paddle) bricks balls) dc))
 
 ;;; GUI STATE
 
@@ -299,7 +307,7 @@
                     (λ () 
                       (set! the-world (update the-world))
                       (send canvas on-paint))]
-                   [interval 100])) ; in milliseconds
+                   [interval (inexact->exact (* Δt 1000))])) ; in milliseconds
 (send timer start 20)
 
 
