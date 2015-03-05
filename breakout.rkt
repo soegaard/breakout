@@ -1,5 +1,4 @@
-#lang racket
-(require racket/gui)
+#lang racket (require racket/gui)
 
 ;;;
 ;;; BREAKOUT
@@ -65,7 +64,7 @@
   (define cols 10)
   (for/list ([i (* rows cols)])
     (define row (quotient  i cols))
-    (define strength (- rows row 1))
+    (define strength (- rows row))
     (define x (+ margin (* (+ w gap) (remainder i cols)))) 
     (define y (+ margin (* (+ h gap) row)))
     (new-brick x y strength)))
@@ -79,7 +78,7 @@
 (define (create-ball)
   (define x (- (/ width 2.) (/ paddle-width 2.)))
   (define y (- height (* 3. paddle-height)))
-  (new-ball x y 4 -20))  ; velocities in pixels per second
+  (new-ball x y 4. -20.))  ; velocities in pixels per second
 
 ;;; Updaters
 
@@ -111,14 +110,14 @@
   (restart-on-r
    (update-paddle
      (update-bricks
-      (update-balls w)))))
+      (update-ball w)))))
 
 
 (define (update-bricks w)
   (define bs (world-bricks w))
   (struct-copy world w [bricks (map update-brick bs)]))
 
-(define (update-balls w)
+(define (update-ball w)
   (define b (world-ball w))
   (move-ball w b))
 
@@ -147,27 +146,37 @@
 
 (define (move-ball w b)
   (match-define (ball x y bw bh vx vy) b)
+  (define Δx (* Δt vx)) ; distance = time * velocity
+  (define Δy (* Δt vy))
   ; the total distance to move during this time step
-  (define Δ (* Δt (sqrt (+ (sqr vx) (sqr vy)))))
+  (define Δ (sqrt (+ (sqr Δx) (sqr Δy))))
   ; the number of steps: a step needs to so small that
   ; the ball moves at most one pixlel in both the horisontal 
-  ; and vertical direction (this way a fast ball can't move
-  ; through a brick)
-  ; compute the number n of steps 
-  (define n (inexact->exact (ceiling (/ Δ (max (abs vx) (abs vy))))))
-  (define Δx (/ (* Δt vx) n))
-  (define Δy (/ (* Δt vy) n))
-  ; (displayln (list 'move-ball 'steps steps 'Δx Δx 'Δy Δy))
+  ; and vertical direction (this way a fast ball can't move through a brick)
+  (define n (* 3 (inexact->exact (ceiling (max (abs Δx) (abs Δy) #;(abs Δ))))))
+  ; the individual steps in each direction:
+  
+  ; (displayln (list 'move-ball 'steps n 'Δx Δx 'Δy Δy))
   (match-define (world paddle bricks _) w)
   (for/fold ([w (world paddle bricks b)]) ([_ n])
-    (move-ball/one-step w Δx Δy)))
+    ; if (during move-ball/one-step) the ball velocity is changed,
+    ; the Δx/n and Δy/n needs to be recomputed - so we can't
+    ; just use Δx and Δy from above repeatedly
+    (match-define (ball x y bw bh vx vy) (world-ball w))
+    (define Δx/n (/ (* Δt vx) n))
+    (define Δy/n (/ (* Δt vy) n))
+    (move-ball/one-step w Δx/n Δy/n)))
 
 (define (move-ball/one-step w Δx Δy)
+  (unless (<= (sqrt (+ (sqr Δx) (sqr Δy))) 1.)
+    (displayln (list Δx Δy (sqrt (+ (sqr Δx) (sqr Δy)))))
+    (error 'move-ball "internal error: expected small steps to be smaller than 1"))
   ; move the first ball in w the distance given by Δx and Δy,
   ; handle collisions: i.e. remove brick and change direction
   (match-define (world paddle bricks b) w)
-  (match-define (ball x y bw bh vx vy) b)
+  (match-define (ball x y bw bh vx vy) b)  
   (define moved-ball (ball (+ x Δx) (+ y Δy) bw bh vx vy))
+  
   (handle-ball/wall-collision
    (handle-ball/paddle-collision
     (handle-ball/brick-collisions 
@@ -180,36 +189,27 @@
            (< (+ x1 w1) x2) (> x1 (+ x2 w2))
            (< (+ y1 h1) y2) (> y1 (+ y2 h2)))))
 
-(define (collisions? x bs)
-  (for/or ([b bs]) (colliding? x b)))
-
-(define (inside-screen? b)
-  (match-define (body x y w h) b)
-  (and (< 0 x width)
-       (< 0 y height)))
-
 (define (maybe-flip a-ball a-brick)
-  (displayln (list a-ball a-brick))
+  ; (displayln (list a-ball a-brick))
   ; a collision between the ball and the body has been detected,
   ; maybe flip the x and y velocities of the ball
   (match-define (body bx by bw bh) a-brick)
-  (define (~ x y) (<= (abs (- x y)) 1))
+  (define (~ x y) (<= (abs (- x y)) 1.5)) ; xxx
   (define (maybe-flip-vx a-ball)
     (match-define (ball x y w h vx vy) a-ball)
-    (if (or (~ (+ x w) bx) (~ x (+ bx bw)))
-        (ball x y w h (- vx) vy)
-        a-ball))
+    (cond [(~ (+ x w) bx)  (ball (- bx  w) y w h (- vx) vy)]
+          [(~ x (+ bx bw)) (ball (+ bx bw) y w h (- vx) vy)]
+          [else a-ball]))
   (define (maybe-flip-vy a-ball)
     (match-define (ball x y w h vx vy) a-ball)
-    (if (or (~ (+ y h) by) (~ y (+ by bh)))
-        (ball x y w h vx (- vy))
-        a-ball))
+    (cond [(~ (+ y h) by)  (ball x (- by h)  w h vx (- vy))]
+          [(~ y (+ by bh)) (ball x (+ by bh) w h vx (- vy))]
+          [else a-ball]))
   (maybe-flip-vy (maybe-flip-vx a-ball)))
 
 (define (reduce-brick-strength b)
   (match-define (brick x y w h s) b)
   (brick x y w h (max (- s 1) 0)))
- 
 
 (define (handle-ball/brick-collisions w)
   ; given the ball b, remove any bricks colliding with b
@@ -228,7 +228,7 @@
   (world paddle new-bricks new-ball))
 
 (define (handle-ball/paddle-collision w)
-  ; handle collisions between the first ball and the paddle
+  ; handle collisions between ball and paddle
   (match-define (world p bricks b) w)
   (cond 
     [(colliding? p b)
@@ -248,11 +248,11 @@
   (match-define (ball x y bw bh vx vy) a-ball)
   (cond
     ; upper wall
-    [(<= y 0)     (world paddle bricks (ball x y bw bh vx (- vy)))]
+    [(<= y 0)     (world paddle bricks (ball x 1 bw bh vx (- vy)))]
     ; left wall
-    [(<= x 0)     (world paddle bricks (ball x y bw bh (- vx) vy))]
+    [(<= x 0)     (world paddle bricks (ball 1 y bw bh (- vx) vy))]
     ; right wall
-    [(>= x width) (world paddle bricks (ball x y bw bh (- vx) vy))]
+    [(>= x width) (world paddle bricks (ball (- width 1) y bw bh (- vx) vy))]
     [else w]))
 
 ;;; DRAWING
@@ -266,8 +266,8 @@
       (cond 
         [(paddle? b) (if (paddle-dead? b) "red" "green")]
         [(brick? b)  (match (brick-strength b)
-                       [0 "blue"] [1 "green"] [2 "yellow"]
-                       [3 "orange"] [4 "red"] [_ "red"])]
+                       [1 "blue"]   [2 "green"] [3 "yellow"]
+                       [4 "orange"] [5 "red"]   [_ "black"])]
         [else        "black"]))    
     (send dc set-brush (new brush% [color c] [style 'solid]))
     (send dc draw-rectangle x y w h)))
@@ -332,5 +332,4 @@
 
 (displayln "Breakout")
 (displayln "Move:  left and right arrow")
-(displayln "Shoot: space")
 (displayln "Reset: r")
