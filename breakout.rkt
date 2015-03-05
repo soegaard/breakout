@@ -37,8 +37,8 @@
 (define (new-ball x y vx vy)
   (ball x y ball-size ball-size vx vy))
 
-(define (new-brick x y)
-  (brick x y brick-width brick-height 1))
+(define (new-brick x y s)
+  (brick x y brick-width brick-height s))
 
 (define (new-paddle x y)
   (paddle x y paddle-width paddle-height #f))
@@ -64,9 +64,11 @@
   (define rows 5)
   (define cols 10)
   (for/list ([i (* rows cols)])
+    (define row (quotient  i cols))
+    (define strength (- rows row 1))
     (define x (+ margin (* (+ w gap) (remainder i cols)))) 
-    (define y (+ margin (* (+ h gap) (quotient  i cols)))) 
-    (new-brick x y)))
+    (define y (+ margin (* (+ h gap) row)))
+    (new-brick x y strength)))
 
 ; create-paddle : -> paddle
 (define (create-paddle)
@@ -251,7 +253,13 @@
 (define (draw-bodies bs dc)
   (for ([b bs])
     (match-define (body x y w h) b)
-    (define c (if (paddle? b) (if (paddle-dead? b) "red" "green") "black"))
+    (define c 
+      (cond 
+        [(paddle? b) (if (paddle-dead? b) "red" "green")]
+        [(brick? b)  (match (brick-strength b)
+                       [0 "blue"] [1 "green"] [2 "yellow"]
+                       [3 "orange"] [4 "red"] [_ "red"])]
+        [else        "black"]))    
     (send dc set-brush (new brush% [color c] [style 'solid]))
     (send dc draw-rectangle x y w h)))
 
