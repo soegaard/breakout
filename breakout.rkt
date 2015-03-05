@@ -22,7 +22,7 @@
 
 ;;; Configuration
 (define width            400)
-(define height           400)
+(define height           200)
 (define paddle-width      30)
 (define paddle-height      6)
 (define ball-size          3)
@@ -206,6 +206,11 @@
         a-ball))
   (maybe-flip-vy (maybe-flip-vx a-ball)))
 
+(define (reduce-brick-strength b)
+  (match-define (brick x y w h s) b)
+  (brick x y w h (max (- s 1) 0)))
+ 
+
 (define (handle-ball/brick-collisions w)
   ; given the ball b, remove any bricks colliding with b
   ; if the ball collides with a brick, change its direction
@@ -213,9 +218,13 @@
   (define-values (new-bricks new-ball)
     (for/fold ([new-bricks '()] [ball ball])
               ([brick bricks])
-      (if (colliding? brick ball)
-          (values             new-bricks (maybe-flip ball brick))
-          (values (cons brick new-bricks)            ball))))
+      (cond 
+        [(colliding? brick ball)
+         (define new-brick (reduce-brick-strength brick))
+         (if (zero? (brick-strength new-brick))
+              (values                 new-bricks  (maybe-flip ball brick))
+              (values (cons new-brick new-bricks) (maybe-flip ball brick)))]
+        [else (values (cons brick new-bricks)                 ball)])))
   (world paddle new-bricks new-ball))
 
 (define (handle-ball/paddle-collision w)
