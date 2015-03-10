@@ -113,10 +113,11 @@
 ;;; UPDATES
 
 (define (update w)
-  (restart-on-r
-   (update-paddle
+  (new-ball-on-b
+   (restart-on-r
+    (update-paddle
      (update-bricks
-      (update-ball w)))))
+      (update-ball w))))))
 
 
 (define (update-bricks w)
@@ -131,6 +132,14 @@
   (if (key-down? #\r)
       (create-world)
       w))
+
+(define (new-ball-on-b w)
+  (if (key-down? #\b)
+      (struct-copy world w 
+                   [ball   (create-ball)]
+                   [paddle (create-paddle)])
+      w))
+
 
 ;;; Collision
 
@@ -337,5 +346,9 @@
 ;;;
 
 (displayln "Breakout")
-(displayln "Move:  left and right arrow")
-(displayln "Reset: r")
+(displayln "Move:     left and right arrow")
+(displayln "New Ball: b")
+(displayln "Reset:    r")
+
+
+
