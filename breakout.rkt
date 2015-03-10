@@ -20,13 +20,19 @@
 ; The velocities vx and vy of the ball are measured in pixels pr second.
 
 ;;; Configuration
-(define width            400)
-(define height           200)
 (define paddle-width      30)
 (define paddle-height      6)
 (define ball-size          3)
 (define brick-width       30)
 (define brick-height      10)
+(define bricks-in-a-row   10)
+(define brick-in-a-column  5)
+(define brick-gap          2)
+(define width              (+ (* brick-width (+ bricks-in-a-row 2))
+                              (* brick-gap   (- bricks-in-a-row 2))))
+(define height           200)
+
+
 (define frames-per-second 10)
 
 (define Δt (/ 1. frames-per-second))
@@ -58,7 +64,7 @@
 (define (create-bricks)
   (define w brick-width)
   (define h brick-height)
-  (define gap 2)
+  (define gap brick-gap)
   (define margin 30)
   (define rows 5)
   (define cols 10)
